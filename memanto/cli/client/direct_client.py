@@ -1828,10 +1828,17 @@ class DirectClient:
 
         export_svc = self._get_export_service()
         out = output_path if output_path else None
+        try:
+            avatar = self.get_agent(agent_id).get("avatar")
+        except AgentNotFoundError:
+            # Session validation above remains authoritative; persona metadata
+            # is optional, including when the local agent record is absent.
+            avatar = None
         written_path = export_svc.write_memory_md(
             agent_id=agent_id,
             memories_by_type=memories_by_type,
             output_path=Path(out) if out else None,
+            avatar=avatar,
         )
 
         per_type_counts = {t: len(mems) for t, mems in memories_by_type.items() if mems}

@@ -278,7 +278,7 @@ Two presets ship with MEMANTO:
 | Preset | Avatar | Provider |
 |---|---|---|
 | `john` | 🧭 John | Claude |
-| `madeleine` | 👩‍💼 Madeleine | OpenAI |
+| `madeleine` | 👩 Madeleine | OpenAI |
 
 #### `avatar presets` - Show Built-in Presets
 
@@ -326,7 +326,7 @@ yields John on OpenAI.
 
 ```bash
 memanto avatar set coach --preset john
-memanto avatar set finance --name "Madeleine" --provider openai --emoji "👩‍💼"
+memanto avatar set finance --name "Madeleine" --provider openai --emoji "👩"
 ```
 
 #### `avatar clear` - Remove an Avatar

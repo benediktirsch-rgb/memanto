@@ -6,6 +6,7 @@ API fixtures are reused from ``tests.test_api`` via attribute assignment so
 its test classes are not collected twice.
 """
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -40,6 +41,13 @@ runner = CliRunner()
 
 
 class TestAvatarModel:
+    def test_madeleine_preset_uses_single_codepoint_emoji(self):
+        assert AVATAR_PRESETS["madeleine"].emoji == "👩"
+        guide = (
+            Path(__file__).resolve().parents[1] / "docs/CLI_USER_GUIDE.md"
+        ).read_text(encoding="utf-8")
+        assert "| `madeleine` | 👩 Madeleine | OpenAI |" in guide
+
     def test_presets_cover_john_and_madeleine(self):
         assert set(AVATAR_PRESETS) == {"john", "madeleine"}
         john = get_avatar_preset("John")
@@ -315,6 +323,36 @@ class TestAvatarHelpers:
 
 
 class TestAvatarCLI:
+    @pytest.mark.parametrize("online", [True, False])
+    @pytest.mark.parametrize("avatar", [JOHN, MADELEINE, None])
+    def test_status_displays_current_agent_avatar(self, online, avatar):
+        from memanto.app.clients.backend import Backend
+
+        with (
+            patch("memanto.cli.commands.core.config_manager") as cfg,
+            patch("memanto.cli.commands.core.get_client") as get_client,
+            patch("memanto.cli.commands.core.httpx.get") as health,
+        ):
+            cfg.is_configured.return_value = True
+            cfg.get_backend.return_value = Backend.CLOUD
+            cfg.get_active_session.return_value = ("active", "token")
+            cfg.get_server_url.return_value = "http://localhost:8000"
+            if not online:
+                health.side_effect = ConnectionError("offline")
+            else:
+                health.return_value.json.return_value = {"status": "healthy"}
+            client = get_client.return_value
+            client.get_session_info.return_value = {"agent_id": "active"}
+            client.get_agent.return_value = {"avatar": avatar}
+            client.list_agents.return_value = []
+            result = runner.invoke(app, ["status"])
+        assert result.exit_code == 0, result.stdout
+        assert "Avatar" in result.stdout
+        if avatar:
+            assert avatar["name"] in result.stdout
+            assert ("Claude" if avatar == JOHN else "OpenAI") in result.stdout
+        client.get_agent.assert_called_once_with("active")
+
     def test_presets(self, cli_client):
         result = runner.invoke(app, ["avatar", "presets"])
         assert result.exit_code == 0
@@ -425,3 +463,157 @@ class TestAvatarCLI:
         result = runner.invoke(app, ["agent", "list"])
         assert result.exit_code == 0
         assert "John" in result.stdout and "Claude" in result.stdout
+
+
+class TestAvatarMemoryContext:
+    @pytest.mark.parametrize("client_kind", ["direct", "sdk"])
+    def test_sync_and_hook_replace_previous_persona_and_memories(
+        self, tmp_path, client_kind
+    ):
+        from memanto.app.services.memory_export_service import MemoryExportService
+        from memanto.cli.client.direct_client import DirectClient
+        from memanto.cli.client.sdk_client import SdkClient
+        from memanto.cli.connect.assets.hooks import session_start as hook
+
+        cls = DirectClient if client_kind == "direct" else SdkClient
+        client = object.__new__(cls)
+        project = tmp_path / "project"
+        for agent_id in ("john", "madeleine"):
+            avatar = AVATAR_PRESETS[agent_id].model_dump(mode="json")
+            with (
+                patch.object(client, "_get_validated_session_for_agent"),
+                patch.object(
+                    client,
+                    "_gather_memories_by_type",
+                    return_value={
+                        "fact": [{"title": "Private", "content": f"Only {agent_id}"}]
+                    },
+                ),
+                patch.object(
+                    client,
+                    "_get_export_service",
+                    return_value=MemoryExportService(tmp_path / "exports"),
+                ),
+                patch.object(client, "get_agent", return_value={"avatar": avatar}),
+            ):
+                client.sync_memory_to_project(agent_id, str(project))
+            with (
+                patch.object(hook, "_read_stdin", return_value={"cwd": str(project)}),
+                patch.object(hook, "_claim", return_value=True),
+                patch.object(
+                    hook.subprocess, "run", return_value=MagicMock(returncode=0)
+                ),
+                patch.object(hook, "install_statusline", return_value=None),
+                patch.object(hook, "_out") as out,
+            ):
+                hook.main()
+            assert out.call_args.args[0].startswith(
+                f"Du sprichst als {avatar['emoji']} {avatar['name']}"
+            )
+            content = (project / "MEMORY.md").read_text(encoding="utf-8")
+            assert f"Only {agent_id}" in content
+            other = "madeleine" if agent_id == "john" else "john"
+            assert f"Only {other}" not in content
+
+    @pytest.mark.parametrize("preset", ["john", "madeleine", None])
+    def test_export_header_and_utf8_lf(self, tmp_path, preset):
+        from memanto.app.services.memory_export_service import MemoryExportService
+
+        avatar = AVATAR_PRESETS[preset].model_dump(mode="json") if preset else None
+        path = MemoryExportService(tmp_path).write_memory_md(
+            "owner",
+            {"fact": [{"title": "Private", "content": "Owner memory"}]},
+            avatar=avatar,
+        )
+        raw = path.read_bytes()
+        assert not raw.startswith(b"\xef\xbb\xbf") and b"\r\n" not in raw
+        content = raw.decode("utf-8")
+        if preset:
+            provider = "Claude" if preset == "john" else "OpenAI"
+            assert content.startswith(
+                f"Du sprichst als {avatar['emoji']} {avatar['name']} ({provider})\n\n"
+            )
+        else:
+            assert content.startswith("# Memory — owner\n")
+        assert "Owner memory" in content
+
+    def test_avatar_metadata_cannot_inject_header_lines(self):
+        from memanto.app.services.memory_export_service import MemoryExportService
+
+        content = MemoryExportService().format_memory_md(
+            "owner", {}, avatar={"name": "Bene\nDigital", "emoji": "\nX"}
+        )
+        assert content.splitlines()[0] == "Du sprichst als X Bene Digital (other)"
+
+    @pytest.mark.parametrize("client_kind", ["direct", "sdk"])
+    @pytest.mark.parametrize("missing_metadata", [True, False])
+    def test_export_uses_target_agent_not_active_persona(
+        self, tmp_path, client_kind, missing_metadata
+    ):
+        from memanto.app.services.memory_export_service import MemoryExportService
+        from memanto.cli.client.direct_client import DirectClient
+        from memanto.cli.client.sdk_client import SdkClient
+
+        cls = DirectClient if client_kind == "direct" else SdkClient
+        client = object.__new__(cls)
+        client.agent_id = "john"
+        with (
+            patch.object(client, "_get_validated_session_for_agent"),
+            patch.object(client, "_gather_memories_by_type", return_value={}) as gather,
+            patch.object(
+                client,
+                "_get_export_service",
+                return_value=MemoryExportService(tmp_path),
+            ),
+            patch.object(
+                client, "get_agent", return_value={"avatar": MADELEINE}
+            ) as get_agent,
+        ):
+            if missing_metadata:
+                get_agent.side_effect = AgentNotFoundError("No local metadata")
+            result = client.export_memory_md("madeleine")
+        get_agent.assert_called_once_with("madeleine")
+        gather.assert_called_once_with("madeleine", 25)
+        content = Path(result["output_path"]).read_text(encoding="utf-8")
+        if missing_metadata:
+            assert content.startswith("# Memory — madeleine")
+        else:
+            assert content.startswith("Du sprichst als MA Madeleine (OpenAI)")
+        assert "John" not in content
+
+    @pytest.mark.parametrize("synced", [True, False])
+    @pytest.mark.parametrize(
+        "persona", ["Du sprichst als 🧭 John (Claude)", "# Memory — plain"]
+    )
+    def test_session_hook_emits_only_synced_header(self, tmp_path, synced, persona):
+        from memanto.cli.connect.assets.hooks import session_start as hook
+
+        (tmp_path / "MEMORY.md").write_text(
+            persona + "\n\n> Total memories: **0**\n", encoding="utf-8"
+        )
+        with (
+            patch.object(hook, "_read_stdin", return_value={"cwd": str(tmp_path)}),
+            patch.object(hook, "_claim", return_value=True),
+            patch.object(
+                hook,
+                "sync_memory",
+                return_value="MEMORY.md refreshed." if synced else None,
+            ),
+            patch.object(hook, "install_statusline", return_value=None),
+            patch.object(hook, "_out") as out,
+        ):
+            hook.main()
+        if not synced:
+            out.assert_not_called()
+        else:
+            message = out.call_args.args[0]
+            assert message.startswith(persona) == persona.startswith("Du sprichst als ")
+
+    def test_readme_documents_presets_and_manual_switch(self):
+        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(
+            encoding="utf-8"
+        )
+        section = readme.split("## Avatars\n", 1)[1].split("\n---", 1)[0]
+        assert "John (Claude)" in section and "Madeleine (OpenAI)" in section
+        assert "memanto avatar switch Madeleine" in section
+        assert "manual" in section and "namespace" in section

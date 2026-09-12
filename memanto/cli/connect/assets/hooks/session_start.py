@@ -232,6 +232,15 @@ def main() -> None:
     try:
         summary = sync_memory(project_dir)
         if summary:
+            # Only read persona metadata after a successful sync. Never adopt
+            # a previous agent's MEMORY.md when refreshing failed.
+            try:
+                with (Path(project_dir) / "MEMORY.md").open(encoding="utf-8") as memory:
+                    persona = memory.readline().strip()
+                if persona.startswith("Du sprichst als "):
+                    lines.append(persona)
+            except OSError:
+                pass
             lines.append(
                 f"{MARK} {summary} Read MEMORY.md before acting; it carries standing instructions, decisions, and open commitments from previous sessions."
             )

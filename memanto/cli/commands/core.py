@@ -658,6 +658,7 @@ def status():
     and registered agents at a glance.
     """
     from memanto.app import __version__ as memanto_version
+    from memanto.cli.commands.avatar import avatar_label
 
     # Header
     console.print(
@@ -797,6 +798,9 @@ def status():
                 "Agent", f"[bold]{session_data.get('agent_id', active_agent_id)}[/bold]"
             )
             sess_table.add_row("Pattern", session_data.get("pattern", "unknown"))
+            sess_table.add_row(
+                "Avatar", avatar_label(direct.get_agent(active_agent_id).get("avatar"))
+            )
             sess_table.add_row("Namespace", session_data.get("namespace", "unknown"))
             sess_table.add_row(
                 "Session Token",
@@ -840,6 +844,9 @@ def status():
                 "Agent", f"[bold]{session_data.get('agent_id', active_agent_id)}[/bold]"
             )
             sess_table.add_row("Pattern", session_data.get("pattern", "unknown"))
+            sess_table.add_row(
+                "Avatar", avatar_label(direct.get_agent(active_agent_id).get("avatar"))
+            )
             sess_table.add_row("Namespace", session_data.get("namespace", "unknown"))
             sess_table.add_row(
                 "Session Token",

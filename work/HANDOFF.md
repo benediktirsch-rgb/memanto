@@ -85,3 +85,61 @@ Vorgehen für Astra: `git fetch origin && git checkout feature/avatars`, `pip in
 - Nur Porcelain-Git: `pull --ff-only` → `add <dateien>` → `commit` → `push`. Nie `add -A`, nie `push --force`.
 - UTF-8 ohne BOM, LF. Vor jedem Commit `ruff check` + `ruff format` + `pytest tests/test_avatars.py`.
 - Nach jedem Paket diese Datei fortschreiben. Kein Merge nach `main` ohne Bene.
+
+---
+
+## Paket 2 (Astra, 12.09.2026)
+
+### Änderungen
+
+- `memanto status` zeigt den Avatar mit `avatar_label()` im Bereich Active Agent,
+  sowohl mit laufendem als auch ohne lokalen REST-Server. Ohne Avatar erscheint `—`.
+- Die MEMORY.md-Vorlage liegt in `MemoryExportService`: Frische Exporte beginnen
+  mit `Du sprichst als 🧭 John (Claude)` bzw. `Du sprichst als 👩 Madeleine (OpenAI)`.
+  Beide Clients übergeben die Metadaten des **exportierten** Agenten, auch wenn ein
+  anderer Agent aktiv ist. Fehlende lokale Avatar-Metadaten bleiben optional;
+  Session-Validierung und agentenspezifische Speicherzugriffe bleiben bestehen.
+- Der Claude-Code-SessionStart-Hook gibt diese erste Zeile vor seinem bisherigen
+  Hinweis aus, ausschließlich nach erfolgreichem Sync. Bei fehlgeschlagenem Sync
+  wird keine Persona aus einer eventuell noch vorhandenen MEMORY.md übernommen.
+- README: Abschnitt Avatars, Presets, Erstellen/Wechseln, Trennung der Namensräume
+  und manueller Handoff. Der Wechsel startet keinen anderen Modellanbieter.
+- Madeleine-Preset nutzt `👩` ohne ZWJ; CLI-Handbuch angepasst. Bestehende gespeicherte
+  Avatare werden nicht migriert; bei Bedarf `memanto avatar set <id> --emoji "👩"`.
+- Alle Änderungen UTF-8 ohne BOM / LF; auch neu erzeugte MEMORY.md verwendet LF.
+
+### Prüfungen
+
+- Isolierte Python-3.12-venv außerhalb des Repositories, Installation mit
+  `pip install -e ".[all]"`. Test-USERPROFILE und TEMP ebenfalls isoliert.
+- `ruff check .`: grün; `ruff format --check` auf allen geänderten Python-Dateien: grün.
+- `tests/test_avatars.py`: 55 Tests, davon 22 neu. Zusammen mit
+  `tests/test_export_resilience.py`: **66 bestanden**.
+- Gesamtsuite `pytest tests -o addopts='' -q --tb=short`: **1023 bestanden,
+  26 übersprungen, 1 Warnung**. 24 Live-Moorcheh-Tests ohne echten API-Key und
+  2 POSIX-Rechtetests unter Windows übersprungen. Warnung: Starlette/httpx-Deprecation.
+  `test_session_config_overlay.py` besteht mit dieser normalen venv ebenfalls.
+- Neue Integrationstests prüfen für beide Clients John → Madeleine im selben
+  Projektordner: Persona und Erinnerungsinhalt werden ersetzt, nicht vermischt;
+  der echte Hook-Sync-Lesepfad gibt jeweils die passende Persona aus.
+  Backend und Subprozess sind dabei gemockt; keine Live-Provider-Sitzung gestartet.
+- Keine UI-Änderung und kein erneuter Browserlauf in diesem Paket.
+
+### Offene Punkte / konkreter nächster Schritt für Claude
+
+1. `git pull --ff-only`, Installation aktualisieren und `memanto connect claude-code`
+   im gewünschten Projekt erneut ausführen: Die Integration kopiert Hook-Dateien,
+   bereits installierte Hooks aktualisieren sich nicht durch einen Git-Pull allein.
+   Eine echte neue Claude-Code-Sitzung mit John prüfen, danach manuell Madeleine
+   aktivieren und MEMORY.md kontrollieren. Keine automatische Übergabe behaupten.
+2. Bestehende Cache-Semantik bleibt bestehen: Bei Backend-Ausfall wird der letzte
+   Export desselben Agenten verwendet. Nach Avatar-Umbenennung/-Entfernung kann
+   darin die alte Persona stehen, bis ein frischer Export gelingt. Eine separate
+   Aktualisierung der Persona bei Cache-Fallback wäre ein mögliches Folgepaket.
+3. `avatar switch` bleibt unverändert bei `clear_active_session()` plus Aktivierung.
+   Die Entscheidung über echte Session-Beendigung mit Zusammenfassung ist weiterhin
+   offen; nicht stillschweigend zusätzliche Modellaufrufe einführen.
+
+Änderungen gehören ausschließlich auf `feature/avatars` im Fork und in Draft-PR #1.
+Kein Upstream-PR, kein Merge, kein automatischer Wechsel. Bene reicht diese Datei
+von Hand an Claude weiter.

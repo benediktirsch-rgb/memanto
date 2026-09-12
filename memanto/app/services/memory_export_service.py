@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from memanto.app.config import get_data_dir
+from memanto.app.models.session import AgentAvatar
 from memanto.app.utils.validation import validate_output_path, validate_safe_id
 
 # Memory type metadata: (label, emoji, description)
@@ -126,6 +127,7 @@ class MemoryExportService:
         agent_id: str,
         memories_by_type: dict[str, list[dict[str, Any]]],
         generated_at: str | None = None,
+        avatar: dict[str, Any] | None = None,
     ) -> str:
         """
         Build the full Markdown string.
@@ -134,6 +136,7 @@ class MemoryExportService:
             agent_id: Agent identifier.
             memories_by_type: Dict mapping memory type -> list of memory dicts.
             generated_at: Timestamp for the header (defaults to now).
+            avatar: Optional persona belonging to the exported agent.
 
         Returns:
             Formatted Markdown string.
@@ -146,6 +149,16 @@ class MemoryExportService:
         lines: list[str] = []
 
         # Header
+        if avatar:
+            persona = AgentAvatar.model_validate(avatar)
+            provider = {"claude": "Claude", "openai": "OpenAI", "other": "other"}[
+                persona.provider.value
+            ]
+            glyph = _one_line(persona.emoji or persona.initials)
+            lines.append(
+                f"Du sprichst als {glyph} {_one_line(persona.name)} ({provider})"
+            )
+            lines.append("")
         lines.append(f"# Memory — {agent_id}")
         lines.append("")
         lines.append(f"> Generated: {generated_at}  ")
@@ -223,6 +236,7 @@ class MemoryExportService:
         agent_id: str,
         memories_by_type: dict[str, list[dict[str, Any]]],
         output_path: Path | None = None,
+        avatar: dict[str, Any] | None = None,
     ) -> Path:
         """
         Generate and write memory.md to disk.
@@ -232,6 +246,7 @@ class MemoryExportService:
             memories_by_type: Dict mapping memory type -> list of memory dicts.
             output_path: Custom output path. Defaults to the active backend's
                 export directory with filename ``{agent_id}_memory.md``.
+            avatar: Optional persona belonging to the exported agent.
 
         Returns:
             Absolute Path to the written file.
@@ -250,6 +265,6 @@ class MemoryExportService:
             output_path = validated_path
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        content = self.format_memory_md(agent_id, memories_by_type)
-        output_path.write_text(content, encoding="utf-8")
+        content = self.format_memory_md(agent_id, memories_by_type, avatar=avatar)
+        output_path.write_text(content, encoding="utf-8", newline="\n")
         return output_path.resolve()

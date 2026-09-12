@@ -102,7 +102,7 @@ AVATAR_PRESETS: dict[str, AgentAvatar] = {
         name="John", provider=AgentProvider.CLAUDE, emoji="🧭", color="#d97757"
     ),
     "madeleine": AgentAvatar(
-        name="Madeleine", provider=AgentProvider.OPENAI, emoji="👩‍💼", color="#10a37f"
+        name="Madeleine", provider=AgentProvider.OPENAI, emoji="👩", color="#10a37f"
     ),
 }
 

@@ -86,6 +86,26 @@ macOS, Linux, Windows. `memanto ui` opens a local dashboard over the whole estat
 
 ---
 
+## Avatars
+
+Give each agent a persona: **🧭 John (Claude)** and **👩 Madeleine (OpenAI)**
+are built-in presets. Display names, providers, emoji and colours are editable.
+
+```bash
+memanto agent create john --avatar john
+memanto agent create madeleine --avatar madeleine
+memanto avatar switch John
+memanto status
+memanto avatar switch Madeleine
+```
+
+Switching avatars activates the corresponding agent; memories stay in that
+agent's namespace. It does not launch or change your model provider. The
+Claude Code SessionStart hook and freshly exported `MEMORY.md` show the
+selected persona. Handoffs between Claude and OpenAI remain manual.
+
+---
+
 ## Own your agentic memory
 
 This is the part that matters in two years, and it's the part every platform-native memory feature is designed to prevent.
