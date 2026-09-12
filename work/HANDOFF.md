@@ -7,7 +7,7 @@ Es gibt **keinen automatischen Wechsel** — Bene reicht die Übergabe von Hand 
 
 - Fork: https://github.com/benediktirsch-rgb/memanto (Upstream: moorcheh-ai/memanto, `main` vom 12.09.2026)
 - Branch: `feature/avatars`
-- Draft-PR: siehe Abschnitt „Stand“ (wird beim Push ergänzt)
+- Draft-PR im Fork: https://github.com/benediktirsch-rgb/memanto/pull/1 (Basis `main` des Forks, nicht Upstream)
 
 ---
 
