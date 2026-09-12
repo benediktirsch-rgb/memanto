@@ -268,6 +268,13 @@ memanto agent activate AGENT_ID           # Activate (or reactivate) session
 memanto agent deactivate                  # End session
 memanto agent delete AGENT_ID            # Delete agent (prompts to keep/purge cloud memories)
 
+# Avatars (John on Claude, Madeleine on OpenAI, ...)
+memanto avatar presets                    # Built-in presets
+memanto avatar list                       # Agents with their avatars, active one marked
+memanto avatar switch NAME                # Switch persona = activate that agent
+memanto avatar set AGENT_ID --preset john # Give an agent a face
+memanto avatar clear AGENT_ID             # Remove the avatar
+
 # Memory Operations
 memanto remember "content"                # Store memory (fact)
 memanto remember "content" --type TYPE    # Store with type

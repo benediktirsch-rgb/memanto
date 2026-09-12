@@ -16,7 +16,12 @@ from pydantic import ValidationError
 from memanto.app.clients.moorcheh import get_moorcheh_client
 from memanto.app.config import get_data_dir
 from memanto.app.core import agent_namespace
-from memanto.app.models.session import AgentCreate, AgentInfo, AgentList
+from memanto.app.models.session import (
+    AgentAvatar,
+    AgentCreate,
+    AgentInfo,
+    AgentList,
+)
 from memanto.app.utils.atomic_write import atomic_write_text
 from memanto.app.utils.errors import (
     AgentAlreadyExistsError,
@@ -118,6 +123,7 @@ class AgentService:
                 namespace=namespace,
                 pattern=agent_create.pattern,
                 description=agent_create.description,
+                avatar=agent_create.avatar,
                 created_at=datetime.now(timezone.utc),
                 memory_count=0,
                 session_count=0,
@@ -220,6 +226,51 @@ class AgentService:
 
         self._save_agent(agent)
         return agent
+
+    def set_avatar(self, agent_id: str, avatar: AgentAvatar | None) -> AgentInfo:
+        """
+        Set or clear the avatar (persona) of an agent.
+
+        Args:
+            agent_id: Agent identifier
+            avatar: New avatar, or None to remove the current one
+
+        Returns:
+            Updated AgentInfo
+
+        Raises:
+            AgentNotFoundError: If agent doesn't exist
+        """
+        agent_file = self._get_agent_file(agent_id)
+        lock_file = agent_file.with_suffix(".json.lock")
+
+        with FileLock(str(lock_file), timeout=5):
+            agent = self.get_agent(agent_id)
+            if not agent:
+                raise AgentNotFoundError(f"Agent '{agent_id}' not found")
+            agent.avatar = avatar
+            self._save_agent(agent)
+            return agent
+
+    def find_by_avatar_name(self, name: str) -> AgentInfo | None:
+        """
+        Resolve an avatar display name (case-insensitive) to its agent.
+
+        Returns None when no agent carries that avatar name. Agent IDs are
+        checked first so ``switch john`` works whether ``john`` is the agent
+        ID or only the avatar name.
+        """
+        wanted = name.strip().lower()
+        if not wanted:
+            return None
+        agents = self.list_agents().agents
+        for agent in agents:
+            if agent.agent_id.lower() == wanted:
+                return agent
+        for agent in agents:
+            if agent.avatar and agent.avatar.name.lower() == wanted:
+                return agent
+        return None
 
     def delete_agent(self, agent_id: str) -> None:
         """

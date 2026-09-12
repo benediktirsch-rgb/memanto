@@ -62,6 +62,9 @@ config_manager = ConfigManager()
 
 # Create subcommands
 agent_app = typer.Typer(help="Agent management commands")
+avatar_app = typer.Typer(
+    help="Avatars: give agents a face (John on Claude, Madeleine on OpenAI) and switch between them"
+)
 session_app = typer.Typer(help="Legacy aliases for agent activation commands")
 config_app = typer.Typer(help="Configuration commands")
 schedule_app = typer.Typer(help="Daily summary scheduling commands")
@@ -73,6 +76,7 @@ migrate_app = typer.Typer(
 )
 
 app.add_typer(agent_app, name="agent")
+app.add_typer(avatar_app, name="avatar")
 app.add_typer(session_app, name="session")
 app.add_typer(config_app, name="config")
 app.add_typer(schedule_app, name="schedule")

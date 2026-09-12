@@ -28,6 +28,7 @@ from memanto.cli.commands._shared import (
     format_local_time,
     get_client,
 )
+from memanto.cli.commands.avatar import avatar_label, build_avatar
 
 
 @agent_app.command("create")
@@ -37,18 +38,44 @@ def agent_create(
         "tool", help="Agent pattern: project, support, or tool"
     ),
     description: str | None = typer.Option(None, help="Agent description"),
+    avatar: str | None = typer.Option(
+        None,
+        "--avatar",
+        help="Avatar preset to start from: john (Claude) or madeleine (OpenAI)",
+    ),
+    avatar_name: str | None = typer.Option(
+        None, "--avatar-name", help="Avatar display name (custom avatar)"
+    ),
+    provider: str | None = typer.Option(
+        None,
+        "--provider",
+        help="Model provider behind the avatar: claude, openai or other",
+    ),
+    emoji: str | None = typer.Option(
+        None, "--emoji", help="Avatar glyph shown in the UI"
+    ),
 ):
     """Create a new agent and activate it immediately."""
+    try:
+        avatar_data = build_avatar(avatar, avatar_name, provider, emoji, None)
+    except ValueError as e:
+        _error(str(e))
+
     client = get_client()
 
     try:
-        client.create_agent(agent_id, pattern, description)
+        if avatar_data:
+            client.create_agent(agent_id, pattern, description, avatar=avatar_data)
+        else:
+            client.create_agent(agent_id, pattern, description)
         activation = client.activate_agent(agent_id, 6)
 
         console.print(f"[green]Agent '{agent_id}' created successfully![/green]")
         console.print(f"[dim]Pattern: {pattern}[/dim]")
         if description:
             console.print(f"[dim]Description: {description}[/dim]")
+        if avatar_data:
+            console.print(f"[dim]Avatar: {avatar_label(avatar_data)}[/dim]")
         console.print("[green]Agent activated automatically.[/green]")
         console.print(
             f"[dim]Activation expires: {activation.get('expires_at', 'unknown')}[/dim]"
@@ -84,6 +111,7 @@ def agent_list():
             title="MEMANTO Agents", show_header=True, header_style=BOLD_PRIMARY
         )
         table.add_column("Agent ID", style=BRIGHT)
+        table.add_column("Avatar")
         table.add_column("Pattern", style=ACCENT)
         table.add_column("Description", style="white")
         table.add_column("Status", style=SUCCESS)
@@ -94,6 +122,7 @@ def agent_list():
             status = "[Active] Active" if agent["agent_id"] == active_agent else ""
             table.add_row(
                 agent["agent_id"],
+                avatar_label(agent.get("avatar")),
                 agent.get("pattern", "unknown"),
                 agent.get("description", ""),
                 status,

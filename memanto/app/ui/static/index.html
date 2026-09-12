@@ -1454,6 +1454,87 @@
         .evt-row .evt-op.recall { color: var(--accent); }
         .evt-row .evt-op.answer { color: var(--indigo); }
 
+        /* ── Avatars ── */
+        .avatar-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .avatar-chip {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px 8px 8px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 13px;
+            transition: border-color .15s, background .15s, transform .15s;
+        }
+
+        .avatar-chip:hover {
+            border-color: var(--border-hover);
+            background: var(--bg-card-hover);
+            transform: translateY(-1px);
+        }
+
+        .avatar-chip.active {
+            border-color: var(--avatar-color, var(--accent));
+            background: var(--accent-glow);
+            color: var(--text-primary);
+        }
+
+        .avatar-chip.active .avatar-glyph {
+            box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--avatar-color, var(--accent));
+        }
+
+        .avatar-glyph {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 700;
+            background: var(--avatar-color, var(--indigo));
+            color: #fff;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+
+        .avatar-glyph.sm {
+            width: 22px;
+            height: 22px;
+            font-size: 12px;
+        }
+
+        .avatar-name {
+            font-weight: 600;
+        }
+
+        .avatar-provider {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            color: var(--text-dim);
+        }
+
+        .avatar-chip.active .avatar-provider {
+            color: var(--avatar-color, var(--accent));
+        }
+
+        .avatar-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
         /* ── Modal ── */
         .modal-backdrop {
             position: fixed;
@@ -3079,7 +3160,7 @@
            ================================================================ */
 
         // State
-        const S = { config: null, agentId: null, token: null, memories: [], charts: {}, connections: [], activeConnection: null, cwd: '', activity: null, sessionsOpen: false };
+        const S = { config: null, agentId: null, token: null, activeAvatar: undefined, agentsCache: [], memories: [], charts: {}, connections: [], activeConnection: null, cwd: '', activity: null, sessionsOpen: false };
 
         // API helper
         async function api(method, path, body) {
@@ -3351,7 +3432,14 @@
             if (S.config && S.config.has_active_session && S.agentId) {
                 dot.style.background = 'var(--success)';
                 dot.style.boxShadow = '0 0 8px rgba(34, 197, 94, 0.5)';
-                label.textContent = `${S.agentId} active`;
+                if (S.activeAvatar) {
+                    label.innerHTML = `${avatarGlyphHtml(S.activeAvatar, true)} <strong>${escHtml(S.activeAvatar.name)}</strong> <span class="avatar-provider">${escHtml(PROVIDER_LABELS[S.activeAvatar.provider] || '')}</span>`;
+                    label.title = `agent ${S.agentId}`;
+                } else {
+                    label.textContent = `${S.agentId} active`;
+                    label.title = '';
+                    if (S.activeAvatar === undefined) refreshActiveAvatar().then(a => { if (a) updateSidebarStatus(); });
+                }
             } else if (isBackendConfigured()) {
                 dot.style.background = 'var(--warning)';
                 dot.style.boxShadow = '0 0 8px rgba(245, 158, 11, 0.5)';
@@ -3388,6 +3476,170 @@
         }
 
         // ================================================================
+        // AVATARS — the face of an agent (John on Claude, Madeleine on OpenAI)
+        // ================================================================
+        const PROVIDER_LABELS = { claude: 'Claude', openai: 'OpenAI', other: 'other' };
+        const PROVIDER_COLORS = { claude: '#d97757', openai: '#10a37f', other: '#6366f1' };
+
+        function avatarColor(a) {
+            if (!a) return 'var(--indigo)';
+            return a.color || PROVIDER_COLORS[a.provider] || 'var(--indigo)';
+        }
+
+        function avatarGlyph(a) {
+            if (!a) return '?';
+            if (a.emoji) return a.emoji;
+            const parts = String(a.name || '').split(/\s+/).filter(Boolean);
+            if (!parts.length) return '?';
+            if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+            return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        }
+
+        function avatarGlyphHtml(a, small) {
+            return `<span class="avatar-glyph${small ? ' sm' : ''}" style="--avatar-color:${escHtml(avatarColor(a))}">${escHtml(avatarGlyph(a))}</span>`;
+        }
+
+        // Inline label for tables: glyph + name + provider. Falls back to a dash.
+        function avatarInlineHtml(a) {
+            if (!a) return '<span style="color:var(--text-dim)">—</span>';
+            return `<span class="avatar-inline">${avatarGlyphHtml(a, true)}<span>${escHtml(a.name)}</span><span class="avatar-provider">${escHtml(PROVIDER_LABELS[a.provider] || a.provider || '')}</span></span>`;
+        }
+
+        // Chip bar above the agents table. Clicking a chip switches to that
+        // avatar: the server activates its agent, which ends the previous
+        // session — one active persona at a time, memories never mix.
+        function buildAvatarBar(agents) {
+            const withAvatar = agents.filter(a => a.avatar);
+            if (!withAvatar.length) {
+                return `<p style="color:var(--text-dim);font-size:12px;margin-bottom:14px">No avatars yet — give an agent a face with the <strong>Avatar</strong> button in the table, or via CLI: <code style="color:var(--accent);font-family:var(--font-mono)">memanto avatar set &lt;agent-id&gt; --preset john</code></p>`;
+            }
+            let html = '<div class="avatar-bar">';
+            withAvatar.forEach(a => {
+                const isActive = a.agent_id === S.agentId && S.config && S.config.has_active_session;
+                const title = isActive ? `${a.avatar.name} is active` : `Switch to ${a.avatar.name} (${a.agent_id})`;
+                html += `<button class="avatar-chip${isActive ? ' active' : ''}" style="--avatar-color:${escHtml(avatarColor(a.avatar))}" title="${escHtml(title)}" onclick="switchAvatar('${escHtml(a.agent_id)}', this)">
+                    ${avatarGlyphHtml(a.avatar)}
+                    <span><div class="avatar-name">${escHtml(a.avatar.name)}</div><div class="avatar-provider">${escHtml(PROVIDER_LABELS[a.avatar.provider] || a.avatar.provider || '')}${isActive ? ' · active' : ''}</div></span>
+                </button>`;
+            });
+            html += '</div>';
+            return html;
+        }
+
+        async function switchAvatar(agentId, chip) {
+            if (agentId === S.agentId && S.config && S.config.has_active_session) return;
+            if (chip) chip.disabled = true;
+            await activateAgent(agentId, null);
+        }
+
+        // Sidebar + dashboard need the active agent's avatar; cache it on S.
+        async function refreshActiveAvatar() {
+            if (!S.agentId || !isBackendConfigured()) { S.activeAvatar = null; return null; }
+            try {
+                const agent = await api('GET', `/api/v2/agents/${S.agentId}`);
+                S.activeAvatar = agent.avatar || null;
+            } catch { S.activeAvatar = null; }
+            return S.activeAvatar;
+        }
+
+        function openAvatarModal(agentId, current) {
+            const existing = document.getElementById('avatarModal');
+            if (existing) existing.remove();
+            const cur = current || {};
+            const modal = document.createElement('div');
+            modal.className = 'modal-backdrop';
+            modal.id = 'avatarModal';
+            modal.onclick = closeAvatarModal;
+            const providers = ['claude', 'openai', 'other'].map(p => `<option value="${p}" ${p === (cur.provider || 'other') ? 'selected' : ''}>${PROVIDER_LABELS[p]}</option>`).join('');
+            modal.innerHTML = `<div class="modal" onclick="event.stopPropagation()" style="max-width:520px;width:100%">
+                <div class="modal-header">
+                    <h3>Avatar for <span style="color:var(--accent)">${escHtml(agentId)}</span></h3>
+                    <button class="modal-close" onclick="closeAvatarModal()">×</button>
+                </div>
+                <div class="form-group"><label>Preset</label>
+                    <select id="avPreset" onchange="applyAvatarPreset()">
+                        <option value="">— custom —</option>
+                        <option value="john">🧭 John · Claude</option>
+                        <option value="madeleine">👩‍💼 Madeleine · OpenAI</option>
+                    </select></div>
+                <div class="form-row">
+                    <div class="form-group"><label>Display name *</label><input id="avName" value="${escHtml(cur.name || '')}" placeholder="e.g. John" maxlength="40"></div>
+                    <div class="form-group"><label>Provider</label><select id="avProvider">${providers}</select></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Emoji (optional)</label><input id="avEmoji" value="${escHtml(cur.emoji || '')}" placeholder="🧭" maxlength="8"></div>
+                    <div class="form-group"><label>Colour (optional)</label><input id="avColor" value="${escHtml(cur.color || '')}" placeholder="#d97757" maxlength="7"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;gap:8px;margin-top:8px">
+                    <div>${cur.name ? `<button class="btn btn-danger btn-sm" onclick="clearAvatar('${escHtml(agentId)}', this)">Remove avatar</button>` : ''}</div>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-secondary" onclick="closeAvatarModal()">Cancel</button>
+                        <button class="btn btn-primary" onclick="saveAvatar('${escHtml(agentId)}', this)">Save</button>
+                    </div>
+                </div>
+            </div>`;
+            document.body.appendChild(modal);
+            const nameEl = document.getElementById('avName');
+            if (nameEl) nameEl.focus();
+        }
+
+        function applyAvatarPreset() {
+            const presets = {
+                john: { name: 'John', provider: 'claude', emoji: '🧭', color: '#d97757' },
+                madeleine: { name: 'Madeleine', provider: 'openai', emoji: '👩‍💼', color: '#10a37f' },
+            };
+            const p = presets[document.getElementById('avPreset').value];
+            if (!p) return;
+            document.getElementById('avName').value = p.name;
+            document.getElementById('avProvider').value = p.provider;
+            document.getElementById('avEmoji').value = p.emoji;
+            document.getElementById('avColor').value = p.color;
+        }
+
+        function closeAvatarModal() {
+            const m = document.getElementById('avatarModal');
+            if (m) m.remove();
+        }
+
+        async function saveAvatar(agentId, btn) {
+            const name = document.getElementById('avName').value.trim();
+            if (!name) { toast('The avatar needs a display name', 'error'); return; }
+            const body = { name, provider: document.getElementById('avProvider').value };
+            const emoji = document.getElementById('avEmoji').value.trim();
+            const color = document.getElementById('avColor').value.trim();
+            if (emoji) body.emoji = emoji;
+            if (color) {
+                if (!/^#[0-9a-fA-F]{6}$/.test(color)) { toast('Colour must look like #RRGGBB', 'error'); return; }
+                body.color = color;
+            }
+            if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving...'; }
+            try {
+                await api('PUT', `/api/v2/agents/${agentId}/avatar`, body);
+                closeAvatarModal();
+                toast(`${name} is now the face of "${agentId}"`);
+                if (agentId === S.agentId) { S.activeAvatar = body; updateSidebarStatus(); }
+                loadAgents();
+            } catch (e) {
+                toast('Saving avatar failed: ' + e.message, 'error');
+                if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+            }
+        }
+
+        async function clearAvatar(agentId, btn) {
+            if (btn) btn.disabled = true;
+            try {
+                await api('DELETE', `/api/v2/agents/${agentId}/avatar`);
+                closeAvatarModal();
+                toast(`Avatar removed from "${agentId}"`);
+                if (agentId === S.agentId) { S.activeAvatar = null; updateSidebarStatus(); }
+                loadAgents();
+            } catch (e) {
+                toast('Removing avatar failed: ' + e.message, 'error');
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        // ================================================================
         // AGENTS
         // ================================================================
         async function loadAgents() {
@@ -3404,24 +3656,32 @@
                     box.innerHTML = `<p style="color:var(--text-dim);padding:20px">No agents registered yet. Create one via CLI: <code style="color:var(--accent);font-family:var(--font-mono)">memanto agent create &lt;id&gt;</code></p>`;
                     return;
                 }
-                box.innerHTML = buildAgentsTable(agents);
+                S.agentsCache = agents;
+                box.innerHTML = buildAvatarBar(agents) + buildAgentsTable(agents);
             } catch (e) {
                 box.innerHTML = `<p style="color:var(--error);padding:20px">Error loading agents: ${escHtml(e.message)}</p>`;
             }
         }
 
+        function editAvatarFor(agentId) {
+            const a = (S.agentsCache || []).find(x => x.agent_id === agentId);
+            openAvatarModal(agentId, a ? a.avatar : null);
+        }
+
         function buildAgentsTable(agents) {
-            let html = `<div class="table-wrap"><table><thead><tr><th>Agent</th><th>Pattern</th><th>Description</th><th>Memories</th><th>Sessions</th><th>Created</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
+            let html = `<div class="table-wrap"><table><thead><tr><th>Agent</th><th>Avatar</th><th>Pattern</th><th>Description</th><th>Memories</th><th>Sessions</th><th>Created</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
             agents.forEach(a => {
                 const isActive = a.agent_id === S.agentId && S.config && S.config.has_active_session;
                 const statusBadge = isActive
                     ? '<span class="badge badge-success">● active</span>'
                     : `<span class="badge badge-info">${escHtml(a.status || 'ready')}</span>`;
-                const actions = isActive
+                const avatarBtn = `<button class="btn btn-sm btn-secondary" title="Set or change the avatar" onclick="editAvatarFor('${a.agent_id}')">Avatar</button> `;
+                const actions = avatarBtn + (isActive
                     ? `<button class="btn btn-sm btn-secondary" onclick="deactivateAgent('${a.agent_id}', this)">Deactivate</button>`
-                    : `<button class="btn btn-sm btn-primary" onclick="activateAgent('${a.agent_id}', this)">Activate</button>`;
+                    : `<button class="btn btn-sm btn-primary" onclick="activateAgent('${a.agent_id}', this)">Activate</button>`);
                 html += `<tr${isActive ? ' style="background:var(--accent-glow)"' : ''}>
                     <td style="color:var(--text-primary);font-weight:600">${escHtml(a.agent_id)}</td>
+                    <td>${avatarInlineHtml(a.avatar)}</td>
                     <td><span class="badge badge-accent">${escHtml(a.pattern || '—')}</span></td>
                     <td style="font-size:12px">${escHtml(trunc(a.description || '—', 60))}</td>
                     <td>${a.memory_count ?? '—'}</td>
@@ -3450,8 +3710,11 @@
                 // Invalidate cached views tied to the previous agent
                 S._explorerLoaded = false;
                 S.explorerAll = [];
+                const cached = (S.agentsCache || []).find(x => x.agent_id === agentId);
+                S.activeAvatar = cached ? (cached.avatar || null) : null;
                 updateSidebarStatus();
-                toast(`Agent "${agentId}" activated`);
+                if (!cached) refreshActiveAvatar().then(updateSidebarStatus);
+                toast(S.activeAvatar ? `Switched to ${S.activeAvatar.name} (${agentId})` : `Agent "${agentId}" activated`);
                 loadAgents();
                 loadConflictBadge();
             } catch (e) {
@@ -3466,6 +3729,7 @@
                 await api('POST', `/api/v2/agents/${agentId}/deactivate`);
                 S.agentId = null;
                 S.token = null;
+                S.activeAvatar = null;
                 if (S.config) {
                     S.config.active_agent_id = null;
                     S.config.has_active_session = false;
@@ -3527,6 +3791,7 @@
                     profile.innerHTML = `
                 <table class="config-table"><tbody>
                 <tr><td>Agent ID</td><td><strong style="color:var(--accent)">${escHtml(agent.agent_id)}</strong></td></tr>
+                <tr><td>Avatar</td><td>${avatarInlineHtml(agent.avatar)}</td></tr>
                 <tr><td>Pattern</td><td><span class="badge badge-accent">${escHtml(agent.pattern || '—')}</span></td></tr>
                 <tr><td>Description</td><td>${escHtml(agent.description || '—')}</td></tr>
                 <tr><td>Namespace</td><td><code style="color:var(--cyan);font-family:var(--font-mono)">${escHtml(agent.namespace || '—')}</code></td></tr>

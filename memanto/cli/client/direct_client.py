@@ -443,6 +443,7 @@ class DirectClient:
         agent_id: str,
         pattern: str = "tool",
         description: str | None = None,
+        avatar: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Create a new agent.
@@ -452,6 +453,8 @@ class DirectClient:
             pattern: Agent pattern — ``"support"``, ``"project"``, or
                 ``"tool"`` (default).
             description: Optional human-readable description.
+            avatar: Optional persona dict (``name``, ``provider``, ``emoji``,
+                ``color``) — see :class:`memanto.app.models.session.AgentAvatar`.
 
         Returns:
             Agent info dict with keys ``agent_id``, ``namespace``,
@@ -472,12 +475,17 @@ class DirectClient:
                 f"Invalid pattern '{pattern}'. Must be one of: {', '.join(sorted(_VALID_PATTERNS))}"
             )
 
-        from memanto.app.models.session import AgentCreate, AgentPattern
+        from memanto.app.models.session import (
+            AgentAvatar,
+            AgentCreate,
+            AgentPattern,
+        )
 
         agent_create = AgentCreate(
             agent_id=agent_id,
             pattern=AgentPattern(pattern),
             description=description,
+            avatar=AgentAvatar(**avatar) if avatar else None,
         )
 
         logger.debug("Creating agent '%s' with pattern '%s'", agent_id, pattern)
@@ -511,6 +519,38 @@ class DirectClient:
         if not agent:
             raise AgentNotFoundError(f"Agent '{agent_id}' not found")
         return cast(dict[str, Any], agent.model_dump(mode="json"))
+
+    def set_agent_avatar(
+        self, agent_id: str, avatar: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        """
+        Set (or clear with ``None``) the avatar of an agent.
+
+        Args:
+            agent_id: Agent identifier.
+            avatar: Persona dict with ``name``, ``provider``, optional
+                ``emoji`` / ``color``; ``None`` removes the avatar.
+
+        Returns:
+            Updated agent info dict.
+
+        Raises:
+            AgentNotFoundError: If agent does not exist.
+        """
+        from memanto.app.models.session import AgentAvatar
+
+        model = AgentAvatar(**avatar) if avatar else None
+        agent = self._get_agent_service().set_avatar(agent_id, model)
+        return cast(dict[str, Any], agent.model_dump(mode="json"))
+
+    def find_agent_by_avatar(self, name: str) -> dict[str, Any] | None:
+        """
+        Resolve an agent ID or avatar name (case-insensitive) to agent info.
+
+        Returns ``None`` when nothing matches.
+        """
+        agent = self._get_agent_service().find_by_avatar_name(name)
+        return cast(dict[str, Any], agent.model_dump(mode="json")) if agent else None
 
     def delete_agent(self, agent_id: str) -> dict[str, Any]:
         """

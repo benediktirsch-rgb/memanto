@@ -165,6 +165,8 @@ memanto agent create AGENT_ID [OPTIONS]
 **Options:**
 - `--pattern TEXT` - Agent pattern: project, support, or tool (default: tool)
 - `--description TEXT` - Optional description
+- `--avatar TEXT` - Start from an avatar preset: `john` (Claude) or `madeleine` (OpenAI)
+- `--avatar-name TEXT` / `--provider TEXT` / `--emoji TEXT` - Custom avatar (provider: claude, openai, other)
 
 **Behavior:**
 1. Creates the agent namespace in Moorcheh.
@@ -259,6 +261,84 @@ memanto agent delete my-agent
 # Force delete, skip confirmation (still asks about cloud memories)
 memanto agent delete my-agent --force
 ```
+
+---
+
+### Avatar Commands
+
+An **avatar** is the face of an agent: a display name such as *John* or
+*Madeleine*, the model provider behind it (`claude`, `openai` or `other`) and
+an optional emoji / colour. Each avatar lives on exactly one agent, so
+**switching avatars means activating that agent** — memories stay in the
+agent's own namespace and never mix between personas. The web UI shows the
+avatars as chips above the agents table and in the sidebar; one click switches.
+
+Two presets ship with MEMANTO:
+
+| Preset | Avatar | Provider |
+|---|---|---|
+| `john` | 🧭 John | Claude |
+| `madeleine` | 👩‍💼 Madeleine | OpenAI |
+
+#### `avatar presets` - Show Built-in Presets
+
+```bash
+memanto avatar presets
+```
+
+#### `avatar list` - Who Is Available
+
+```bash
+memanto avatar list
+```
+
+Lists every agent with its avatar and marks the active one with `●`.
+
+#### `avatar current` - Who Is Active
+
+```bash
+memanto avatar current
+```
+
+#### `avatar switch` - Change Persona
+
+```bash
+memanto avatar switch NAME_OR_AGENT_ID [--hours N]
+```
+
+Resolves `NAME_OR_AGENT_ID` first as an agent ID, then as an avatar name
+(case-insensitive), ends the current session and activates the target agent.
+Switching to the avatar that is already active is a no-op.
+
+```bash
+memanto avatar switch Madeleine     # by avatar name
+memanto avatar switch john          # by agent ID
+```
+
+#### `avatar set` - Give an Agent a Face
+
+```bash
+memanto avatar set AGENT_ID [--preset john|madeleine] [--name TEXT] [--provider claude|openai|other] [--emoji TEXT] [--color #RRGGBB]
+```
+
+Explicit values override the preset, so `--preset john --provider openai`
+yields John on OpenAI.
+
+```bash
+memanto avatar set coach --preset john
+memanto avatar set finance --name "Madeleine" --provider openai --emoji "👩‍💼"
+```
+
+#### `avatar clear` - Remove an Avatar
+
+```bash
+memanto avatar clear AGENT_ID
+```
+
+Memories are untouched; only the persona is removed.
+
+**REST equivalents:** `GET /api/v2/avatars/presets`, `PUT /api/v2/agents/{id}/avatar`,
+`DELETE /api/v2/agents/{id}/avatar`; `GET /api/v2/status` includes the active avatar.
 
 ---
 

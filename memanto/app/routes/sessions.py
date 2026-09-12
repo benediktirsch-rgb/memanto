@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from memanto.app.clients import moorcheh as moorcheh_clients
 from memanto.app.config import settings
 from memanto.app.models.session import (
+    AVATAR_PRESETS,
+    AgentAvatar,
     AgentCreate,
     AgentInfo,
     AgentList,
@@ -125,6 +127,47 @@ async def list_agents(moorcheh_api_key: str = Depends(verify_moorcheh_api_key)):
         if agent.namespace in counts:
             agent.memory_count = counts[agent.namespace]
     return agent_list
+
+
+@router.get("/avatars/presets", response_model=dict[str, AgentAvatar])
+async def list_avatar_presets(
+    _moorcheh_api_key: str = Depends(verify_moorcheh_api_key),
+):
+    """
+    Built-in avatar presets (e.g. ``john`` on Claude, ``madeleine`` on OpenAI).
+
+    Copy one onto an agent with ``PUT /agents/{agent_id}/avatar``.
+    """
+    return AVATAR_PRESETS
+
+
+@router.put("/agents/{agent_id}/avatar", response_model=AgentInfo)
+async def set_agent_avatar(
+    agent_id: str,
+    avatar: AgentAvatar,
+    _moorcheh_api_key: str = Depends(verify_moorcheh_api_key),
+):
+    """
+    Give an agent a face: display name, provider (claude / openai / other),
+    optional emoji and colour. The avatar is shown in the CLI and the web UI
+    and lets you switch between personas by name.
+    """
+    try:
+        return agent_service.set_avatar(agent_id, avatar)
+    except AgentNotFoundError as e:
+        raise map_error_to_http_exception(e)
+
+
+@router.delete("/agents/{agent_id}/avatar", response_model=AgentInfo)
+async def clear_agent_avatar(
+    agent_id: str,
+    _moorcheh_api_key: str = Depends(verify_moorcheh_api_key),
+):
+    """Remove the avatar from an agent (memories are untouched)."""
+    try:
+        return agent_service.set_avatar(agent_id, None)
+    except AgentNotFoundError as e:
+        raise map_error_to_http_exception(e)
 
 
 @router.get("/agents/{agent_id}", response_model=AgentInfo)
@@ -294,6 +337,7 @@ async def get_status(
         raise HTTPException(status_code=404, detail="No active session")
 
     time_remaining = session.time_remaining()
+    agent = agent_service.get_agent(session.agent_id)
 
     return SessionInfo(
         session_id=session.session_id,
@@ -304,4 +348,5 @@ async def get_status(
         status=session.status,
         time_remaining_seconds=max(0, int(time_remaining.total_seconds())),
         pattern=session.pattern,
+        avatar=agent.avatar if agent else None,
     )

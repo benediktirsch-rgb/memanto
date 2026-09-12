@@ -30,6 +30,89 @@ class AgentPattern(str, Enum):
     TOOL = "tool"
 
 
+class AgentProvider(str, Enum):
+    """Model provider an avatar speaks through."""
+
+    CLAUDE = "claude"
+    OPENAI = "openai"
+    OTHER = "other"
+
+
+class AgentAvatar(BaseModel):
+    """
+    Persona shown for an agent in the CLI and web UI.
+
+    An avatar gives an agent a face: a display name (``John``), the model
+    provider behind it (``claude``) and an optional glyph/colour. Switching
+    avatars means activating the agent that carries that avatar — memories
+    stay in the agent's own namespace, so John and Madeleine never mix.
+    """
+
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=40,
+        description="Display name of the persona (e.g. John, Madeleine)",
+    )
+    provider: AgentProvider = Field(
+        default=AgentProvider.OTHER,
+        description="Model provider behind the persona",
+    )
+    emoji: str | None = Field(
+        default=None,
+        max_length=8,
+        description="Optional glyph shown in the UI; falls back to initials",
+    )
+    color: str | None = Field(
+        default=None,
+        pattern=r"^#[0-9a-fA-F]{6}$",
+        description="Optional accent colour as #RRGGBB",
+    )
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v = v.strip()
+        return v
+
+    @field_validator("emoji", mode="before")
+    @classmethod
+    def _blank_emoji_is_none(cls, v: Any) -> Any:
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+    @property
+    def initials(self) -> str:
+        """Two-letter fallback glyph when no emoji is set."""
+        parts = [p for p in self.name.split() if p]
+        if not parts:
+            return "?"
+        if len(parts) == 1:
+            return parts[0][:2].upper()
+        return (parts[0][0] + parts[-1][0]).upper()
+
+
+# Built-in personas. ``memanto agent create john --avatar john`` or
+# ``memanto avatar set <agent> --preset madeleine`` copy one of these onto an
+# agent; the copy can then be edited freely.
+AVATAR_PRESETS: dict[str, AgentAvatar] = {
+    "john": AgentAvatar(
+        name="John", provider=AgentProvider.CLAUDE, emoji="🧭", color="#d97757"
+    ),
+    "madeleine": AgentAvatar(
+        name="Madeleine", provider=AgentProvider.OPENAI, emoji="👩‍💼", color="#10a37f"
+    ),
+}
+
+
+def get_avatar_preset(key: str) -> AgentAvatar | None:
+    """Return a copy of a built-in avatar preset, or None if unknown."""
+    preset = AVATAR_PRESETS.get(key.strip().lower())
+    return preset.model_copy() if preset else None
+
+
 class SessionCreate(BaseModel):
     """Request to create/activate a session"""
 
@@ -87,6 +170,7 @@ class SessionInfo(BaseModel):
     status: SessionStatus
     time_remaining_seconds: int
     pattern: AgentPattern | None = None
+    avatar: AgentAvatar | None = None
 
 
 class SessionSummary(BaseModel):
@@ -116,6 +200,9 @@ class AgentCreate(BaseModel):
     description: str | None = Field(
         None, description="Human-readable description of the agent"
     )
+    avatar: AgentAvatar | None = Field(
+        None, description="Optional persona shown for this agent"
+    )
 
 
 class AgentInfo(BaseModel):
@@ -125,6 +212,7 @@ class AgentInfo(BaseModel):
     namespace: str
     pattern: AgentPattern
     description: str | None = None
+    avatar: AgentAvatar | None = None
     created_at: datetime
     last_session: datetime | None = None
     memory_count: int = 0
