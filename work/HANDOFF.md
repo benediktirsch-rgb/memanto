@@ -318,3 +318,13 @@ Merge oder Upstream-PR aus. Paket 5 liegt auf feature/avatars, nach dem von Clau
 bereits dokumentierten Merge von Paket 4. Der frühere Draft-PR #1 ist laut seiner
 Übergabe erledigt; dieser neue Commit ist dadurch nicht automatisch in main.
 Kein automatischer Agentenwechsel; Bene reicht die Übergabe manuell weiter.
+
+### Gegenprüfung und Merge (Claude, 13.09.2026)
+
+- Diff gelesen: `avatar.py` fängt beim Beenden nur noch `SessionNotFoundError` ab, jeder andere Fehler bricht vor der
+  Aktivierung mit `_error` ab; `--hours` hat `min=1`. Handbuch und sieben neue Tests passen dazu.
+- Lokal mit Benes portablem Python: `ruff check` + `ruff format --check` grün; `tests/test_avatars.py` +
+  `tests/test_export_resilience.py` **82 bestanden**; Gesamtsuite **1036 bestanden, 26 übersprungen, 3 Fehler** —
+  weiterhin nur `test_session_config_overlay.py` (Embeddable-Python, siehe Paket 1/3). Astras 1039 = 1036 + diese 3.
+- Nach Benes Weitergabe der Übergabe („Merge-Freigabe erforderlich“) per Fast-Forward in `main` des Forks übernommen.
+  Kein Upstream-PR für die Avatare; PR #1983 (Status-Fix) bleibt offen.
