@@ -13,6 +13,9 @@ from memanto.app.config import get_data_dir
 from memanto.app.models.session import AgentAvatar
 from memanto.app.utils.validation import validate_output_path, validate_safe_id
 
+# First line of an export when the agent has an avatar (see persona_line()).
+PERSONA_PREFIX = "Du sprichst als "
+
 # Memory type metadata: (label, emoji, description)
 MEMORY_TYPE_META = {
     "fact": (
@@ -122,6 +125,34 @@ class MemoryExportService:
         self.exports_dir = exports_dir or (get_data_dir() / "exports")
 
     # Public API
+    @staticmethod
+    def persona_line(avatar: dict[str, Any] | None) -> str | None:
+        """First line of an export: the persona the agent speaks as, or None."""
+        if not avatar:
+            return None
+        persona = AgentAvatar.model_validate(avatar)
+        provider = {"claude": "Claude", "openai": "OpenAI", "other": "other"}[
+            persona.provider.value
+        ]
+        glyph = _one_line(persona.emoji or persona.initials)
+        return f"{PERSONA_PREFIX}{glyph} {_one_line(persona.name)} ({provider})"
+
+    def apply_persona(self, content: str, avatar: dict[str, Any] | None) -> str:
+        """Replace, add or drop the persona header of an existing export.
+
+        The persona is local agent metadata, not part of the memory snapshot,
+        so a cached export must never carry a renamed or removed avatar.
+        """
+        lines = content.split("\n")
+        if lines and lines[0].startswith(PERSONA_PREFIX):
+            del lines[0]
+            if lines and lines[0] == "":
+                del lines[0]
+        persona_line = self.persona_line(avatar)
+        if persona_line:
+            lines[:0] = [persona_line, ""]
+        return "\n".join(lines)
+
     def format_memory_md(
         self,
         agent_id: str,
@@ -149,15 +180,9 @@ class MemoryExportService:
         lines: list[str] = []
 
         # Header
-        if avatar:
-            persona = AgentAvatar.model_validate(avatar)
-            provider = {"claude": "Claude", "openai": "OpenAI", "other": "other"}[
-                persona.provider.value
-            ]
-            glyph = _one_line(persona.emoji or persona.initials)
-            lines.append(
-                f"Du sprichst als {glyph} {_one_line(persona.name)} ({provider})"
-            )
+        persona_line = self.persona_line(avatar)
+        if persona_line:
+            lines.append(persona_line)
             lines.append("")
         lines.append(f"# Memory — {agent_id}")
         lines.append("")

@@ -1752,9 +1752,17 @@ class SdkClient:
             if not cache_path.exists():
                 raise
             # Backend unreachable, but we have a previously good export —
-            # serve that instead of wiping the project's MEMORY.md.
-            shutil.copy2(str(cache_path), str(target_path))
+            # serve that instead of wiping the project's MEMORY.md. The persona
+            # header is local metadata, so refresh it from the current avatar
+            # rather than trusting whatever the cache still carries.
             content = cache_path.read_text(encoding="utf-8")
+            try:
+                avatar = self.get_agent(agent_id).get("avatar")
+            except AgentNotFoundError:
+                avatar = None
+            content = self._get_export_service().apply_persona(content, avatar)
+            cache_path.write_text(content, encoding="utf-8", newline="\n")
+            target_path.write_text(content, encoding="utf-8", newline="\n")
             return {
                 "output_path": str(target_path.resolve()),
                 "total_memories": content.count("### "),

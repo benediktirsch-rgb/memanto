@@ -424,6 +424,38 @@ class TestAvatarCLI:
         cli_client.activate_agent.assert_called_once_with("madeleine", 6)
         assert "Switched to" in result.stdout and "Madeleine" in result.stdout
 
+    def test_switch_ends_previous_session_for_real(self, cli_client):
+        cli_client.find_agent_by_avatar.return_value = {
+            "agent_id": "madeleine",
+            "avatar": MADELEINE,
+        }
+        cli_client.get_agent.return_value = {"agent_id": "john", "avatar": JOHN}
+        cli_client.deactivate_agent.return_value = {
+            "agent_id": "john",
+            "duration_hours": 1.25,
+        }
+        cli_client.activate_agent.return_value = {"expires_at": "2026-09-13T00:00:00Z"}
+        result = runner.invoke(app, ["avatar", "switch", "Madeleine"])
+        assert result.exit_code == 0, result.stdout
+        cli_client.deactivate_agent.assert_called_once_with("john")
+        cli_client.activate_agent.assert_called_once_with("madeleine", 6)
+        assert "Ended session of" in result.stdout and "1.25 h" in result.stdout
+
+    def test_switch_survives_missing_previous_session(self, cli_client):
+        from memanto.app.utils.errors import SessionNotFoundError
+
+        cli_client.find_agent_by_avatar.return_value = {
+            "agent_id": "madeleine",
+            "avatar": MADELEINE,
+        }
+        cli_client.get_agent.return_value = {"agent_id": "john", "avatar": JOHN}
+        cli_client.deactivate_agent.side_effect = SessionNotFoundError("gone")
+        cli_client.activate_agent.return_value = {"expires_at": "2026-09-13T00:00:00Z"}
+        result = runner.invoke(app, ["avatar", "switch", "Madeleine"])
+        assert result.exit_code == 0, result.stdout
+        cli_client.activate_agent.assert_called_once_with("madeleine", 6)
+        assert "Switched to" in result.stdout and "Ended session" not in result.stdout
+
     def test_switch_to_already_active_is_noop(self, cli_client):
         cli_client.find_agent_by_avatar.return_value = {
             "agent_id": "john",
@@ -545,6 +577,76 @@ class TestAvatarMemoryContext:
             assert f"Only {agent_id}" in content
             other = "madeleine" if agent_id == "john" else "john"
             assert f"Only {other}" not in content
+
+    def test_apply_persona_replaces_adds_and_drops_header(self):
+        from memanto.app.services.memory_export_service import MemoryExportService
+
+        svc = MemoryExportService()
+        body = "# Memory — john\n\n> Total memories: **1**\n"
+        john = AVATAR_PRESETS["john"].model_dump(mode="json")
+        astra = {"name": "Astra", "provider": "openai", "emoji": "✨"}
+        with_john = svc.apply_persona(body, john)
+        assert with_john.startswith("Du sprichst als 🧭 John (Claude)\n\n# Memory")
+        renamed = svc.apply_persona(with_john, astra)
+        assert renamed.startswith("Du sprichst als ✨ Astra (OpenAI)\n\n# Memory")
+        assert "John" not in renamed.split("\n")[0]
+        assert svc.apply_persona(with_john, None) == body
+        assert svc.apply_persona(body, None) == body
+
+    @pytest.mark.parametrize("client_kind", ["direct", "sdk"])
+    @pytest.mark.parametrize("current", ["renamed", "removed"])
+    def test_stale_cache_fallback_refreshes_persona(
+        self, tmp_path, client_kind, current
+    ):
+        """Backend down: the cached export is reused, but with the *current*
+        persona — a renamed or removed avatar must not survive the fallback."""
+        from memanto.app.services.memory_export_service import MemoryExportService
+        from memanto.cli.client.direct_client import DirectClient
+        from memanto.cli.client.sdk_client import SdkClient
+
+        cls = DirectClient if client_kind == "direct" else SdkClient
+        client = object.__new__(cls)
+        exports = tmp_path / "exports"
+        exports.mkdir()
+        cache = exports / "john_memory.md"
+        cache.write_text(
+            "Du sprichst als 🧭 John (Claude)\n\n# Memory — john\n\n"
+            "### Private\n\n> Only john\n",
+            encoding="utf-8",
+        )
+        avatar = (
+            {"name": "Astra", "provider": "openai", "emoji": "✨"}
+            if current == "renamed"
+            else None
+        )
+        project = tmp_path / "project"
+        with (
+            patch(
+                f"memanto.cli.client.{client_kind}_client.get_data_dir",
+                return_value=tmp_path,
+            ),
+            patch.object(
+                client, "export_memory_md", side_effect=ConnectionError("down")
+            ),
+            patch.object(
+                client,
+                "_get_export_service",
+                return_value=MemoryExportService(exports),
+            ),
+            patch.object(client, "get_agent", return_value={"avatar": avatar}),
+        ):
+            result = client.sync_memory_to_project("john", str(project))
+        assert result["source"] == "stale-cache" and result["total_memories"] == 1
+        raw = (project / "MEMORY.md").read_bytes()
+        assert b"\r\n" not in raw
+        content = raw.decode("utf-8")
+        if current == "renamed":
+            assert content.startswith("Du sprichst als ✨ Astra (OpenAI)\n\n# Memory")
+        else:
+            assert content.startswith("# Memory — john")
+        assert "John" not in content.split("\n")[0]
+        assert "Only john" in content
+        assert cache.read_text(encoding="utf-8") == content
 
     @pytest.mark.parametrize("preset", ["john", "madeleine", None])
     def test_export_header_and_utf8_lf(self, tmp_path, preset):

@@ -200,3 +200,59 @@ zeigt „Registered Agents“ mit beiden Avataren.
 
 Änderungen weiterhin nur auf `feature/avatars` im Fork, Draft-PR #1. Kein Upstream-PR, kein Merge, kein
 automatischer Wechsel.
+
+---
+
+## Paket 4 (Claude, 13.09.2026) — Benes Freigabe der offenen Punkte 2–6
+
+Bene hat am 13.09.2026 die Punkte 2–6 freigegeben. Umgesetzt:
+
+### Wechsel-Semantik (Punkt 3)
+
+- `memanto avatar switch` beendet die bisherige Session jetzt **echt** über `client.deactivate_agent()`
+  (`SessionService.end_session`: Status `terminated` auf der Platte, Zusammenfassung mit Dauer) und aktiviert
+  erst dann den Zielagenten. Geprüft: `end_session` macht **keinen Modellaufruf**, nur Dateistatus + Summary.
+  Fehlt die alte Session (z. B. abgelaufen), fällt der Befehl auf `clear_active_session()` zurück und wechselt trotzdem.
+  Ausgabe: `Ended session of 🧭 John · Claude (0.0 h)` vor der Wechselzeile.
+- Web-UI: der Chip-Wechsel (`switchAvatar`) ruft vor `activate` ein `POST …/deactivate` für den bisherigen Agenten,
+  Fehler dort werden geschluckt. Datei `memanto/app/ui/static/index.html`.
+- README-Absatz „Avatars“ angepasst.
+
+### Persona im Cache-Fallback (Punkt 4)
+
+- `MemoryExportService.persona_line(avatar)` (aus `format_memory_md` herausgezogen) und neu
+  `apply_persona(content, avatar)`: entfernt eine vorhandene Kopfzeile `Du sprichst als …`, setzt die aktuelle
+  (oder keine). Konstante `PERSONA_PREFIX`.
+- `sync_memory_to_project` in `direct_client.py` und `sdk_client.py`: im `stale-cache`-Zweig wird der Cache
+  nicht mehr kopiert, sondern mit der **aktuellen** lokalen Avatar-Metadatei neu beschriftet (LF, UTF-8) und sowohl
+  in `MEMORY.md` als auch in den Cache zurückgeschrieben. Umbenannte oder entfernte Avatare überleben den
+  Fallback damit nicht mehr.
+
+### Browserlauf Web-UI (Punkt 6)
+
+- Server isoliert gestartet (`ui_launch.py`, gefaktes Backend, Loopback = Management-Zugriff), Seite Agents:
+  Chips „Madeleine · OpenAI“ und „John · Claude“ rendern; Klick John → Toast „Switched to John (john)“, Chip
+  und Sidebar folgen; Klick Madeleine → Netzwerk zeigt `POST /agents/john/deactivate` (200) vor
+  `POST /agents/madeleine/activate` (200); Sidebar „Madeleine · OpenAI“. Keine Konsolenfehler.
+
+### Prüfungen
+
+- `ruff check` + `ruff format --check`: grün.
+- `tests/test_avatars.py` + `tests/test_export_resilience.py`: **75 bestanden** (neu: Wechsel beendet Session /
+  überlebt fehlende Session, `apply_persona`, Cache-Fallback je Client × umbenannt/entfernt).
+- Gesamtsuite lokal: **1029 bestanden, 26 übersprungen, 3 Fehler** — weiterhin nur `test_session_config_overlay.py`
+  (portables Python, siehe Paket 1/3).
+- Live-Kette CLI: `avatar switch john` → „Ended session of 👩 Madeleine · OpenAI (2.32 h)“, `sessions/john.json`
+  danach `terminated`, `madeleine.json` `active`.
+
+### Merge und Upstream (Punkte 5 und 2)
+
+- `feature/avatars` ist nach Benes Freigabe per Fast-Forward in `main` des Forks gemergt; Draft-PR #1 damit erledigt.
+- Der Status-Fix (Dict aus `list_agents()`) geht als eigener Branch `fix/status-agent-list` gegen
+  `moorcheh-ai/memanto` — nur `core.py` und ein Test in `tests/test_cli.py`, ohne Avatare. Link steht unten,
+  sobald der PR offen ist.
+
+### Offen
+
+- Nichts Blockierendes. Falls Upstream den Status-Fix übernimmt, beim nächsten `git fetch upstream` den Fork
+  rebasen; die Avatare bleiben Fork-intern, bis Bene anders entscheidet.

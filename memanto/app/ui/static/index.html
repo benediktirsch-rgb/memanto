@@ -3529,6 +3529,13 @@
         async function switchAvatar(agentId, chip) {
             if (agentId === S.agentId && S.config && S.config.has_active_session) return;
             if (chip) chip.disabled = true;
+            // Same semantics as `memanto avatar switch`: end the previous
+            // session for real before activating the next agent.
+            const previous = S.agentId;
+            if (previous && previous !== agentId && S.config && S.config.has_active_session) {
+                try { await api('POST', `/api/v2/agents/${previous}/deactivate`); }
+                catch (e) { /* previous session may already be gone; switching still proceeds */ }
+            }
             await activateAgent(agentId, null);
         }
 

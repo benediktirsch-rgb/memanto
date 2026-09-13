@@ -99,10 +99,12 @@ memanto status
 memanto avatar switch Madeleine
 ```
 
-Switching avatars activates the corresponding agent; memories stay in that
-agent's namespace. It does not launch or change your model provider. The
-Claude Code SessionStart hook and freshly exported `MEMORY.md` show the
-selected persona. Handoffs between Claude and OpenAI remain manual.
+Switching avatars ends the previous agent's session (recorded with its
+duration, no model call) and activates the corresponding agent; memories stay
+in that agent's namespace. It does not launch or change your model provider.
+The Claude Code SessionStart hook and exported `MEMORY.md` show the selected
+persona — also when the backend is unreachable and the last cached export is
+reused. Handoffs between Claude and OpenAI remain manual.
 
 ---
 

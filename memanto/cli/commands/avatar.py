@@ -211,14 +211,6 @@ def avatar_switch(
         )
 
     previous_id, _ = config_manager.get_active_session()
-    previous_label = None
-    if previous_id and previous_id != target["agent_id"]:
-        try:
-            previous_label = avatar_label(client.get_agent(previous_id).get("avatar"))
-        except Exception:
-            previous_label = previous_id
-        config_manager.clear_active_session()
-
     if previous_id == target["agent_id"]:
         console.print(
             f"[green]{avatar_label(target.get('avatar'))}[/green] is already active "
@@ -226,11 +218,33 @@ def avatar_switch(
         )
         return
 
+    previous_label = None
+    previous_summary = None
+    if previous_id:
+        try:
+            previous_label = avatar_label(client.get_agent(previous_id).get("avatar"))
+        except Exception:
+            previous_label = previous_id
+        # End the previous session for real — it is marked terminated on disk
+        # and yields a summary — instead of only dropping the local pointer.
+        # No model call is involved. If the session is already gone, fall
+        # back to clearing the pointer so the switch still goes through.
+        try:
+            previous_summary = client.deactivate_agent(previous_id)
+        except Exception:
+            previous_summary = None
+        config_manager.clear_active_session()
+
     try:
         result = client.activate_agent(target["agent_id"], duration_hours)
     except Exception as e:
         _error(f"Failed to activate agent '{target['agent_id']}': {e}")
 
+    if previous_summary:
+        console.print(
+            f"[dim]Ended session of {previous_label} "
+            f"({previous_summary.get('duration_hours', '?')} h)[/dim]"
+        )
     if previous_label:
         console.print(f"[dim]{previous_label} → [/dim]", end="")
     console.print(
