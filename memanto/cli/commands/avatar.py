@@ -14,6 +14,7 @@ import typer
 from rich.table import Table
 
 from memanto.app.models.session import AVATAR_PRESETS, AgentProvider
+from memanto.app.utils.errors import SessionNotFoundError
 from memanto.cli.commands._shared import (
     ACCENT,
     BOLD_PRIMARY,
@@ -195,7 +196,7 @@ def avatar_current():
 def avatar_switch(
     name: str = typer.Argument(..., help="Avatar name (e.g. John) or agent ID"),
     duration_hours: int = typer.Option(
-        6, "--hours", "-h", help="Activation duration in hours (default: 6)"
+        6, "--hours", "-h", min=1, help="Activation duration in hours (default: 6)"
     ),
 ):
     """Switch to another avatar: ends the current session, activates its agent."""
@@ -231,8 +232,10 @@ def avatar_switch(
         # back to clearing the pointer so the switch still goes through.
         try:
             previous_summary = client.deactivate_agent(previous_id)
-        except Exception:
+        except SessionNotFoundError:
             previous_summary = None
+        except Exception as e:
+            _error(f"Failed to end session for '{previous_id}': {e}")
         config_manager.clear_active_session()
 
     try:

@@ -323,6 +323,55 @@ class TestAvatarHelpers:
 
 
 class TestAvatarCLI:
+    def test_switch_ends_previous_session_before_activation(self, cli_client):
+        cli_client.find_agent_by_avatar.return_value = {
+            "agent_id": "madeleine",
+            "avatar": MADELEINE,
+        }
+        cli_client.get_agent.return_value = {"avatar": JOHN}
+        events = []
+        cli_client.deactivate_agent.side_effect = lambda agent: events.append(
+            ("end", agent)
+        )
+        cli_client.activate_agent.side_effect = (
+            lambda agent, hours: events.append(("start", agent)) or {}
+        )
+        result = runner.invoke(app, ["avatar", "switch", "Madeleine"])
+        assert result.exit_code == 0, result.stdout
+        assert events == [("end", "john"), ("start", "madeleine")]
+
+    def test_switch_aborts_when_ending_previous_session_fails(self, cli_client):
+        cli_client.find_agent_by_avatar.return_value = {"agent_id": "madeleine"}
+        cli_client.deactivate_agent.side_effect = OSError("cannot persist session")
+        result = runner.invoke(app, ["avatar", "switch", "Madeleine"])
+        assert result.exit_code == 1
+        cli_client.activate_agent.assert_not_called()
+
+    def test_switch_recovers_orphaned_marker(self, cli_client):
+        from memanto.app.utils.errors import SessionNotFoundError
+
+        cli_client.find_agent_by_avatar.return_value = {"agent_id": "madeleine"}
+        cli_client.deactivate_agent.side_effect = SessionNotFoundError("gone")
+        result = runner.invoke(app, ["avatar", "switch", "Madeleine"])
+        assert result.exit_code == 0
+        cli_client.activate_agent.assert_called_once_with("madeleine", 6)
+
+    def test_switch_rejects_invalid_duration_before_ending_session(self, cli_client):
+        guide = (
+            Path(__file__).resolve().parents[1] / "docs/CLI_USER_GUIDE.md"
+        ).read_text(encoding="utf-8")
+        assert "`--hours` must be at least 1." in guide
+        result = runner.invoke(app, ["avatar", "switch", "Madeleine", "--hours", "0"])
+        assert result.exit_code == 2
+        cli_client.deactivate_agent.assert_not_called()
+
+    def test_switch_reports_activation_failure(self, cli_client):
+        cli_client.find_agent_by_avatar.return_value = {"agent_id": "madeleine"}
+        cli_client.activate_agent.side_effect = OSError("cannot activate")
+        result = runner.invoke(app, ["avatar", "switch", "Madeleine"])
+        assert result.exit_code == 1
+        assert "Failed to activate" in result.stdout
+
     @pytest.mark.parametrize("online", [True, False])
     @pytest.mark.parametrize("avatar", [JOHN, MADELEINE, None])
     def test_status_displays_current_agent_avatar(self, online, avatar):
@@ -776,3 +825,45 @@ class TestAvatarMemoryContext:
         assert "John (Claude)" in section and "Madeleine (OpenAI)" in section
         assert "memanto avatar switch Madeleine" in section
         assert "manual" in section and "namespace" in section
+
+
+@pytest.mark.parametrize("client_kind", ["direct", "sdk"])
+def test_switch_terminates_real_session_and_selects_separate_namespace(
+    tmp_path, agent_service, client_kind
+):
+    from memanto.app.models.session import SessionStatus
+    from memanto.app.services.session_service import SessionService
+    from memanto.cli.client.direct_client import DirectClient
+    from memanto.cli.client.sdk_client import SdkClient
+
+    service = SessionService(
+        secret_key="test-secret-key-for-avatar-switch-12345",
+        sessions_dir=tmp_path / "sessions",
+    )
+    for name in ("john", "madeleine"):
+        agent_service.create_agent(
+            AgentCreate(agent_id=name, avatar=get_avatar_preset(name)),
+            moorcheh_api_key="k",
+        )
+    cls = DirectClient if client_kind == "direct" else SdkClient
+    client = object.__new__(cls)
+    with (
+        patch.object(client, "_get_session_service", return_value=service),
+        patch.object(client, "_get_agent_service", return_value=agent_service),
+        patch("memanto.cli.commands.avatar.get_client", return_value=client),
+        patch("memanto.cli.commands.avatar.config_manager") as cfg,
+    ):
+        cfg.get_active_session.side_effect = lambda: (
+            service.get_active_session().agent_id,
+            "token",
+        )
+        cfg.clear_active_session.side_effect = service.clear_active_session
+        client.activate_agent("john", 6)
+        john_namespace = service.get_session("john").namespace
+        for target, previous in (("madeleine", "john"), ("john", "madeleine")):
+            result = runner.invoke(app, ["avatar", "switch", target])
+            assert result.exit_code == 0, result.stdout
+            assert service.get_session(previous).status == SessionStatus.TERMINATED
+            assert service.get_active_session().agent_id == target
+        assert service.get_session("john").namespace == john_namespace
+        assert service.get_session("madeleine").namespace != john_namespace

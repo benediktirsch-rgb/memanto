@@ -275,3 +275,46 @@ Titel: `Fix 'memanto status' registered-agents table`
 > fallback). **Test:** `tests/test_cli.py::test_status_lists_registered_agents` mocks `list_agents()` with the real
 > dict shape and asserts the *Registered Agents* table renders; it fails on `main` and passes with this change.
 > `ruff check`, `ruff format --check` and `pytest tests/test_cli.py` are green.
+
+
+---
+
+## Paket 5 (Astra, 13.09.2026) — gemeinsamer Stand geprüft und CLI-Fehlerfälle
+
+Beim Abschlussabgleich war Claudes Paket 4 bereits auf origin/feature/avatars.
+Astra hat ihren parallelen Zwischenstand in einem benannten Git-Stash gesichert,
+den Branch per Fast-Forward auf b24d576 aktualisiert und nur ergänzende Änderungen
+übernommen. Claudes Cache-Formatierung, Cache-Aktualisierung, UI und Browserprüfung
+bleiben maßgeblich; keine doppelte Implementierung und keine UI-Änderung in Paket 5.
+
+### Ergänzungen
+
+- CLI: Fehler beim Beenden einer Session werden nicht mehr pauschal verschluckt.
+  Nur SessionNotFoundError erlaubt den Wechsel trotz fehlender alter Session;
+  beispielsweise ein Schreibfehler bricht vor Aktivierung des Ziels ab.
+- --hours unter 1 wird vor der Session-Beendigung abgewiesen.
+- Tests für Reihenfolge Beenden/Aktivieren, Beendigungsfehler, verwaiste Marker,
+  ungültige Dauer und Aktivierungsfehler. Zwei Integrationstests mit echten lokalen
+  Session- und Agenten-Dateien (DirectClient und SdkClient) prüfen John → Madeleine
+  → John: vorherige Session terminated, Ziel aktiv, Namensräume verschieden.
+- CLI-Handbuch beschreibt Fehlerverhalten. Scheitert die Zielaktivierung nach der
+  Beendigung, ist eine explizite erneute Aktivierung notwendig.
+
+### Prüfungen
+
+- 71 Avatar-Tests bestanden; ruff check . und Formatprüfung grün.
+- Vollständiger kombinierter Testlauf: **1039 bestanden, 26 übersprungen, 1 Warnung**.
+  Übersprungen: 24 Live-Moorcheh-Tests ohne API-Key, 2 POSIX-Tests unter Windows.
+  Warnung: bestehende Starlette/httpx-Deprecation. Session-Overlay-Tests grün.
+- Keine Live-Provider-Aufrufe, keine erneute Änderung/Browserprüfung der UI.
+  Claudes dokumentierter Browser- und Claude-Code-Lauf bleibt der Live-Nachweis.
+
+### Nächster Schritt / Übergabe
+
+Die technischen Punkte aus Paket 3 sind durch Claudes Paket 4 und diese Ergänzung
+erledigt. Claude kann diese kleine CLI-Ergänzung gegenprüfen und nach Benes
+Merge-Freigabe in den Fork-Hauptbranch übernehmen; Astra führt keinen weiteren
+Merge oder Upstream-PR aus. Paket 5 liegt auf feature/avatars, nach dem von Claude
+bereits dokumentierten Merge von Paket 4. Der frühere Draft-PR #1 ist laut seiner
+Übergabe erledigt; dieser neue Commit ist dadurch nicht automatisch in main.
+Kein automatischer Agentenwechsel; Bene reicht die Übergabe manuell weiter.

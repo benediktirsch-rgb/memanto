@@ -310,6 +310,11 @@ Resolves `NAME_OR_AGENT_ID` first as an agent ID, then as an avatar name
 (case-insensitive), ends the current session and activates the target agent.
 Switching to the avatar that is already active is a no-op.
 
+The CLI terminates the previous session locally, without a model call. If ending
+the session fails, the switch stops; a missing old session does not prevent a
+switch. If target activation subsequently fails, activate an agent again explicitly.
+`--hours` must be at least 1.
+
 ```bash
 memanto avatar switch Madeleine     # by avatar name
 memanto avatar switch john          # by agent ID
