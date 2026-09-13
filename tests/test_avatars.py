@@ -353,6 +353,37 @@ class TestAvatarCLI:
             assert ("Claude" if avatar == JOHN else "OpenAI") in result.stdout
         client.get_agent.assert_called_once_with("active")
 
+    def test_status_lists_registered_agents_from_client_dict(self):
+        """list_agents() returns {"agents": [...]} — status must unwrap it."""
+        from memanto.app.clients.backend import Backend
+
+        with (
+            patch("memanto.cli.commands.core.config_manager") as cfg,
+            patch("memanto.cli.commands.core.get_client") as get_client,
+            patch("memanto.cli.commands.core.httpx.get") as health,
+        ):
+            cfg.is_configured.return_value = True
+            cfg.get_backend.return_value = Backend.CLOUD
+            cfg.get_active_session.return_value = ("john", "token")
+            cfg.get_server_url.return_value = "http://localhost:8000"
+            health.side_effect = ConnectionError("offline")
+            client = get_client.return_value
+            client.get_session_info.return_value = {"agent_id": "john"}
+            client.get_agent.return_value = {"avatar": JOHN}
+            client.list_agents.return_value = {
+                "agents": [
+                    {"agent_id": "john", "pattern": "tool", "session_count": 2},
+                    {"agent_id": "madeleine", "pattern": "tool", "session_count": 1},
+                ],
+                "count": 2,
+                "warnings": [],
+            }
+            result = runner.invoke(app, ["status"])
+        assert result.exit_code == 0, result.stdout
+        assert "Could not fetch agent list" not in result.stdout
+        assert "Registered Agents" in result.stdout
+        assert "madeleine" in result.stdout
+
     def test_presets(self, cli_client):
         result = runner.invoke(app, ["avatar", "presets"])
         assert result.exit_code == 0
@@ -608,6 +639,32 @@ class TestAvatarMemoryContext:
         else:
             message = out.call_args.args[0]
             assert message.startswith(persona) == persona.startswith("Du sprichst als ")
+
+    def test_session_hook_sync_decodes_utf8_cli_output(self, tmp_path):
+        """memanto prints Rich box drawing and emoji; the hook must decode the
+        CLI output as UTF-8 instead of the console code page (cp1252)."""
+        import sys
+
+        from memanto.cli.connect.assets.hooks import session_start as hook
+
+        real_run = hook.subprocess.run  # captured before the patch below
+
+        (tmp_path / "MEMORY.md").write_text(
+            "Du sprichst als 🧭 John (Claude)\n\n> Total memories: **1**\n",
+            encoding="utf-8",
+        )
+        seen: dict = {}
+
+        def fake_cli(argv, **kwargs):
+            seen.update(kwargs)
+            assert argv[:3] == ["memanto", "memory", "sync"]
+            script = "import sys; sys.stdout.buffer.write('┌ 🧭 ┐\\n'.encode('utf-8'))"
+            return real_run([sys.executable, "-c", script], **kwargs)
+
+        with patch.object(hook.subprocess, "run", side_effect=fake_cli):
+            summary = hook.sync_memory(str(tmp_path))
+        assert summary == "MEMORY.md refreshed — 1 memory loaded."
+        assert seen["encoding"] == "utf-8" and seen["errors"] == "replace"
 
     def test_readme_documents_presets_and_manual_switch(self):
         readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(

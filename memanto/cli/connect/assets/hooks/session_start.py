@@ -110,7 +110,11 @@ def sync_memory(project_dir: str) -> str | None:
         result = subprocess.run(
             ["memanto", "memory", "sync", "--project-dir", project_dir],
             capture_output=True,
-            text=True,
+            # memanto prints Rich box drawing and emoji; the console code page
+            # (cp1252 on Windows) cannot decode them and would crash the
+            # reader thread. Always decode as UTF-8.
+            encoding="utf-8",
+            errors="replace",
             timeout=SYNC_TIMEOUT,
         )
     except FileNotFoundError:

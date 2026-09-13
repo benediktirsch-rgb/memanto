@@ -143,3 +143,60 @@ Vorgehen für Astra: `git fetch origin && git checkout feature/avatars`, `pip in
 Änderungen gehören ausschließlich auf `feature/avatars` im Fork und in Draft-PR #1.
 Kein Upstream-PR, kein Merge, kein automatischer Wechsel. Bene reicht diese Datei
 von Hand an Claude weiter.
+
+---
+
+## Paket 3 (Claude, 13.09.2026) — echte Claude-Code-Sitzung geprüft, zwei Befunde behoben
+
+### Prüfung (Punkt 1 aus Paket 2)
+
+- `git pull --ff-only` auf `75852be`, dann in einem **isolierten Projektordner** (eigenes `USERPROFILE`,
+  eigenes `~/.memanto`, das echte `~/.memanto` von Bene blieb unberührt) `memanto agent create john --avatar john`,
+  `… madeleine --avatar madeleine`, `memanto connect claude-code` (lokal). Die Integration kopierte
+  `session_start.py`/`notify.py` nach `.claude/hooks/` und trug die Hooks in `.claude/settings.json` ein.
+- **Echte Claude-Code-Sitzung** (`claude.exe` 2.1.266 der Desktop-App, `claude -p … --max-turns 1`, Modell Haiku)
+  im Projektordner, Frage: „Zitiere wörtlich die Zeile aus deinem Sitzungsstart-Kontext, die mit ‚Du sprichst als‘
+  beginnt.“ Antwort mit John aktiv: `Du sprichst als 🧭 John (Claude)`. Danach `memanto avatar switch madeleine`,
+  zweite Sitzung: `Du sprichst als 👩 Madeleine (OpenAI)`. `MEMORY.md` trug jeweils nur die Erinnerungen des
+  aktiven Agenten (Johns Inhalte nach dem Wechsel: 0 Treffer). Kein automatischer Wechsel — der Wechsel war
+  ein Handgriff im CLI.
+- `memanto status` zeigt die Zeile „Avatar“ mit Preset-Label.
+- Backend war dabei in-process gefaked (Moorcheh-Client wie in `tests/conftest.py`, `MemoryReadService.search_memories`
+  liefert je Agent feste Erinnerungen); alles andere — CLI, Export, Hook-Subprozess, Claude Code — lief echt.
+
+### Befunde und Änderungen
+
+| Befund | Datei | Änderung |
+|---|---|---|
+| Der Hook rief `memanto memory sync` mit `text=True` auf; Rich malt Rahmen (`┐` = `e2 94 90`) und Emojis, die Windows-Konsole (cp1252) kann das nicht dekodieren → `UnicodeDecodeError` im Lesethread des Subprozesses, Traceback auf stderr (Sync selbst lief durch, rc 0). | `memanto/cli/connect/assets/hooks/session_start.py` | `encoding="utf-8", errors="replace"` statt `text=True`. |
+| `memanto status` meldete „Could not fetch agent list.“: `list_agents()` liefert bei beiden Clients `{"agents": […], "count", "warnings"}`, `status` iterierte über das Dict. **Vorbestand aus Upstream** (`moorcheh-ai/main` identisch), hier behoben, weil Paket 2 den Block darüber angefasst hat. | `memanto/cli/commands/core.py` | `listed.get("agents", [])`, Liste bleibt als Fallback erlaubt. |
+
+Tests: `tests/test_avatars.py` +2 (Status-Tabelle aus dem Dict; Hook dekodiert echte UTF-8-Ausgabe eines
+Kindprozesses und übergibt `encoding`/`errors`). Nach dem Fix in der Live-Kette erneut geprüft: `memanto connect
+claude-code` kopiert die neue Hook-Datei (Vergleich mit dem Repo-Stand identisch), Hook ohne Traceback, `status`
+zeigt „Registered Agents“ mit beiden Avataren.
+
+### Prüfungen
+
+- `ruff check` + `ruff format --check` auf den drei geänderten Python-Dateien: grün.
+- `pytest tests/test_avatars.py -o addopts=''`: **57 bestanden** (55 aus Paket 2 + 2 neu).
+- Gesamtsuite `pytest tests -o addopts='' -q` mit Benes portablem Python: **1022 bestanden, 26 übersprungen, 3 Fehler** — die drei sind ausschließlich `tests/test_session_config_overlay.py` (Kindprozess `python -c "import memanto"`, das Embeddable-Python ignoriert `PYTHONPATH`; siehe Paket 1). Astra hatte sie in der normalen venv grün; Zählung passt: 1049 aus Paket 2 + 2 neue.
+
+### Hinweise
+
+- `install_statusline()` im Hook sucht `statusline.py` neben dem `hooks/`-Ordner; bei der `connect`-Installation
+  gibt es die Datei nicht (nur im Plugin), der Schritt bleibt still. Kein Fehler, nur damit niemand danach sucht.
+- Für Benes Rechner liegt der Test-Bootstrap (gefälschte `memanto.exe`/`python.exe` per distlib-Launcher, isoliertes
+  `USERPROFILE`, gefaktes Backend) unter `C:\dev\_tools\memanto-test\` — nicht versioniert, nur lokal.
+
+### Offene Punkte / nächster Schritt (für Astra)
+
+1. Punkt 2 aus Paket 2 (Persona im Cache-Fallback nach Umbenennung/Entfernung) und Punkt 3 (`avatar switch`
+   mit echter `end_session`) sind unverändert offen — Entscheidung liegt bei Bene.
+2. Der `status`-Fix betrifft auch Upstream. Ob ein kleiner separater PR an moorcheh-ai (nur `core.py` + Test, ohne
+   Avatare) sinnvoll ist, entscheidet Bene; nichts davon automatisch.
+3. Web-UI wurde in Paket 2 und 3 nicht erneut im Browser geprüft; falls die UI noch angefasst wird, Browserlauf
+   wie in Paket 1 wiederholen.
+
+Änderungen weiterhin nur auf `feature/avatars` im Fork, Draft-PR #1. Kein Upstream-PR, kein Merge, kein
+automatischer Wechsel.
