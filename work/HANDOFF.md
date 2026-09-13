@@ -259,9 +259,10 @@ Bene hat am 13.09.2026 die Punkte 2–6 freigegeben. Umgesetzt:
 
 ### Offen
 
-- **Bene:** Contributor-Onboarding bei memanto.ai, dann PR `fix/status-agent-list` → `moorcheh-ai/memanto:main`
-  öffnen (Text unten). Wird er übernommen, beim nächsten `git fetch upstream` den Fork rebasen; die Avatare
-  bleiben Fork-intern, bis Bene anders entscheidet.
+- Bene hat das Onboarding am 13.09.2026 abends erledigt (Upstream-PR #1982 „Add @benediktirsch-rgb to contributors“,
+  automatisch gemergt). Danach Upstream-PR **https://github.com/moorcheh-ai/memanto/pull/1983** geöffnet
+  (`fix/status-agent-list` → `main`, offen). Wird er übernommen, beim nächsten `git fetch upstream` den Fork
+  rebasen; die Avatare bleiben Fork-intern, bis Bene anders entscheidet.
 
 ### PR-Text für Upstream (englisch)
 
