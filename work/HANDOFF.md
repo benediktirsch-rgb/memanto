@@ -248,11 +248,29 @@ Bene hat am 13.09.2026 die Punkte 2–6 freigegeben. Umgesetzt:
 ### Merge und Upstream (Punkte 5 und 2)
 
 - `feature/avatars` ist nach Benes Freigabe per Fast-Forward in `main` des Forks gemergt; Draft-PR #1 damit erledigt.
-- Der Status-Fix (Dict aus `list_agents()`) geht als eigener Branch `fix/status-agent-list` gegen
-  `moorcheh-ai/memanto` — nur `core.py` und ein Test in `tests/test_cli.py`, ohne Avatare. Link steht unten,
-  sobald der PR offen ist.
+- Der Status-Fix (Dict aus `list_agents()`) liegt als eigener Branch **`fix/status-agent-list`** im Fork
+  (Basis `upstream/main` = `aa3f6f1`, Commit `08ef452`): nur `core.py` und ein Test in `tests/test_cli.py`, ohne
+  Avatare; der Test fällt auf `main` durch und besteht mit dem Fix. **PR-Erstellung per API wurde mit 422
+  abgewiesen:** „Interactions on this repository have been restricted to prior contributors only.“ Upstream verlangt
+  laut `CONTRIBUTING.md` einmalig das Onboarding unter https://memanto.ai/contributor-onboard (GitHub-Login, ein
+  CI-Job trägt den Namen in `EXTERNAL_CONTRIBUTORS.md` ein). **Das ist Benes Schritt** — danach den PR mit dem
+  vorbereiteten Text öffnen: `compare/main...benediktirsch-rgb:fix/status-agent-list`, Titel und Body liegen in
+  `C:/dev/_tools/memanto-test/upstream-pr-status-fix.md` (lokal) bzw. unten.
 
 ### Offen
 
-- Nichts Blockierendes. Falls Upstream den Status-Fix übernimmt, beim nächsten `git fetch upstream` den Fork
-  rebasen; die Avatare bleiben Fork-intern, bis Bene anders entscheidet.
+- **Bene:** Contributor-Onboarding bei memanto.ai, dann PR `fix/status-agent-list` → `moorcheh-ai/memanto:main`
+  öffnen (Text unten). Wird er übernommen, beim nächsten `git fetch upstream` den Fork rebasen; die Avatare
+  bleiben Fork-intern, bis Bene anders entscheidet.
+
+### PR-Text für Upstream (englisch)
+
+Titel: `Fix 'memanto status' registered-agents table`
+
+> `memanto status` always printed **"Could not fetch agent list."** below the active-agent panel, even with
+> registered agents. Both clients return `{"agents": [...], "count": n, "warnings": [...]}` from `list_agents()`,
+> but `status` iterated over the dict itself: iterating yielded the keys, `agent.get(...)` raised on a `str`, and the
+> `except` swallowed it into the generic message. **Fix:** unwrap `listed["agents"]` (a plain list still works as a
+> fallback). **Test:** `tests/test_cli.py::test_status_lists_registered_agents` mocks `list_agents()` with the real
+> dict shape and asserts the *Registered Agents* table renders; it fails on `main` and passes with this change.
+> `ruff check`, `ruff format --check` and `pytest tests/test_cli.py` are green.
